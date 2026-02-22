@@ -3,16 +3,17 @@ buildscript {
     repositories {
 
         mavenLocal()
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
-
     }
 
-    gradle.ext.KOTLIN_VERSION = "1.4.32"
+    gradle.ext.KOTLIN_VERSION = "1.9.20"
 
     dependencies {
         // classpath
-        classpath 'com.android.tools.build:gradle:4.1.0'
+        classpath 'com.android.tools.build:gradle:9.0.1'
         classpath 'digital.wup:android-maven-publish:3.6.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$gradle.KOTLIN_VERSION"
     }
@@ -30,6 +31,8 @@ allprojects {
     repositories {
 
         mavenLocal()
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
     }
