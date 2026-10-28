@@ -16,191 +16,162 @@
 
 package com.tencent.matrix.plugin.task
 
-import com.android.build.api.transform.Status
-import com.android.build.gradle.internal.tasks.DexArchiveBuilderTask
-import com.android.builder.model.AndroidProject.FD_OUTPUTS
-import com.google.common.base.Joiner
+import com.tencent.matrix.javalib.util.IOUtil
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.plugin.compat.CreationConfig
 import com.tencent.matrix.plugin.trace.MatrixTrace
 import com.tencent.matrix.trace.extension.MatrixTraceExtension
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
-import org.gradle.api.Project
 import org.gradle.api.file.ConfigurableFileCollection
-import org.gradle.api.file.FileType
+import org.gradle.api.file.Directory
+import org.gradle.api.file.FileCollection
+import org.gradle.api.file.RegularFile
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.*
-import org.gradle.work.ChangeType
-import org.gradle.work.Incremental
-import org.gradle.work.InputChanges
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import java.io.File
-import java.util.concurrent.Callable
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutionException
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
+import java.util.zip.ZipFile
 
 abstract class MatrixTraceTask : DefaultTask() {
     companion object {
-        private const val TAG: String = "Matrix.TraceTask"
-
-        fun getTraceClassOut(project: Project, creationConfig: CreationConfig): String {
-
-            val variantDirName = creationConfig.variant.dirName
-            return Joiner.on(File.separatorChar).join(
-                project.buildDir,
-                FD_OUTPUTS,
-                "traceClassOut",
-                variantDirName)
-        }
+        private const val TAG = "Matrix.TraceTask"
     }
 
-    @get:Incremental
     @get:InputFiles
-    abstract val classInputs: ConfigurableFileCollection
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputJars: ListProperty<RegularFile>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputDirs: ListProperty<Directory>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val bootClasspath: ConfigurableFileCollection
 
     @get:InputFile
     @get:Optional
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
+    @get:PathSensitive(PathSensitivity.NONE)
     abstract val baseMethodMapFile: RegularFileProperty
 
     @get:InputFile
     @get:Optional
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
+    @get:PathSensitive(PathSensitivity.NONE)
     abstract val blockListFile: RegularFileProperty
 
-    @get:Input
-    @get:Optional
+    @get:Internal
     abstract val mappingDir: Property<String>
 
-    @get:Input
-    abstract val traceClassOutputDirectory: Property<String>
-
-    @get:OutputFiles
-    abstract val classOutputs: ConfigurableFileCollection
+    @get:OutputFile
+    abstract val output: RegularFileProperty
 
     @get:OutputFile
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
-    @get:Optional
     abstract val ignoreMethodMapFileOutput: RegularFileProperty
 
     @get:OutputFile
-    @get:PathSensitive(PathSensitivity.ABSOLUTE)
-    @get:Optional
     abstract val methodMapFileOutput: RegularFileProperty
 
-    @get:Optional
+    @get:Input
     abstract val skipCheckClass: Property<Boolean>
 
     @TaskAction
-    fun execute(inputChanges: InputChanges) {
+    fun execute() {
+        val start = System.currentTimeMillis()
+        val outputFile = output.get().asFile
+        val temporaryOutput = outputFile.parentFile.resolve("matrix-trace-tmp")
+        temporaryOutput.deleteRecursively()
+        temporaryOutput.mkdirs()
 
-        val incremental = inputChanges.isIncremental
+        val inputs = inputDirs.get().map { it.asFile } + inputJars.get().map { it.asFile }
+        MatrixTrace(
+                ignoreMethodMapFilePath = ignoreMethodMapFileOutput.get().asFile.absolutePath,
+                methodMapFilePath = methodMapFileOutput.get().asFile.absolutePath,
+                baseMethodMapPath = baseMethodMapFile.asFile.orNull?.absolutePath,
+                blockListFilePath = blockListFile.asFile.orNull?.absolutePath,
+                mappingDir = mappingDir.get(),
+                bootClasspath = bootClasspath.files
+        ).doTransform(
+                classInputs = inputs,
+                changedFiles = emptyMap(),
+                isIncremental = false,
+                skipCheckClass = skipCheckClass.get(),
+                traceClassDirectoryOutput = temporaryOutput,
+                inputToOutput = emptyMap(),
+                legacyReplaceChangedFile = null,
+                legacyReplaceFile = null,
+                uniqueOutputName = true
+        )
 
-        val changedFiles = ConcurrentHashMap<File, Status>()
-
-        if (incremental) {
-            inputChanges.getFileChanges(classInputs).forEach { change ->
-                if (change.fileType == FileType.DIRECTORY) return@forEach
-
-                changedFiles[change.file] = when {
-                    change.changeType == ChangeType.REMOVED -> Status.REMOVED
-                    change.changeType == ChangeType.MODIFIED -> Status.CHANGED
-                    change.changeType == ChangeType.ADDED -> Status.ADDED
-                    else -> Status.NOTCHANGED
+        outputFile.parentFile.mkdirs()
+        JarOutputStream(outputFile.outputStream().buffered()).use { outputJar ->
+            val entries = HashSet<String>()
+            temporaryOutput.walkTopDown().filter { it.isFile }.forEach { file ->
+                if (IOUtil.isRealZipOrJar(file)) {
+                    ZipFile(file).use { inputJar ->
+                        inputJar.entries().asSequence().forEach { entry ->
+                            if (!entry.isDirectory) {
+                                outputJar.addEntry(entry.name, entries) {
+                                    inputJar.getInputStream(entry).use { input -> input.copyTo(it) }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val entryName = file.relativeTo(temporaryOutput).invariantSeparatorsPath
+                    outputJar.addEntry(entryName, entries) { file.inputStream().use { input -> input.copyTo(it) } }
                 }
             }
         }
-
-        val start = System.currentTimeMillis()
-        try {
-
-            val outputDirectory = File(traceClassOutputDirectory.get())
-            MatrixTrace(
-                    ignoreMethodMapFilePath = ignoreMethodMapFileOutput.asFile.get().absolutePath,
-                    methodMapFilePath = methodMapFileOutput.asFile.get().absolutePath,
-                    baseMethodMapPath = baseMethodMapFile.asFile.orNull?.absolutePath,
-                    blockListFilePath = blockListFile.asFile.orNull?.absolutePath,
-                    mappingDir = mappingDir.get(),
-                    project = project
-            ).doTransform(
-                    classInputs = classInputs.files,
-                    changedFiles = changedFiles,
-                    isIncremental = incremental,
-                    skipCheckClass = this.skipCheckClass.get(),
-                    traceClassDirectoryOutput = outputDirectory,
-                    inputToOutput = ConcurrentHashMap(),
-                    legacyReplaceChangedFile = null,
-                    legacyReplaceFile = null,
-                    uniqueOutputName = false
-            )
-
-        } catch (e: ExecutionException) {
-            e.printStackTrace()
-        }
-        val cost = System.currentTimeMillis() - start
-        Log.i(TAG, " Insert matrix trace instrumentations cost time: %sms.", cost)
+        temporaryOutput.deleteRecursively()
+        Log.i(TAG, " Insert matrix trace instrumentations cost time: %sms.", System.currentTimeMillis() - start)
     }
 
-    fun wired(creationConfig: CreationConfig, task: DexArchiveBuilderTask) {
-
-        Log.i(TAG, "Wiring ${this.name} to task '${task.name}'.")
-
-        task.dependsOn(this)
-
-        // Wire minify task outputs to trace task inputs.
-        classInputs.setFrom(task.mixedScopeClasses.files)
-
-        val traceClassOut = getTraceClassOut(project, creationConfig)
-
-        val outputs = task.mixedScopeClasses.files.map {
-            File(traceClassOut, MatrixTrace.appendSuffix(it, "traced"))
+    private fun JarOutputStream.addEntry(name: String, entries: MutableSet<String>, write: (JarOutputStream) -> Unit) {
+        if (entries.add(name)) {
+            putNextEntry(JarEntry(name))
+            write(this)
+            closeEntry()
         }
-
-        classOutputs.from(outputs)
-
-        // Wire trace task outputs to dex task inputs.
-        task.mixedScopeClasses.setFrom(classOutputs)
     }
 
     class CreationAction(
             private val creationConfig: CreationConfig,
-            private val extension: MatrixTraceExtension
+            private val extension: MatrixTraceExtension,
+            private val bootClasspath: FileCollection
     ) : Action<MatrixTraceTask>, BaseCreationAction<MatrixTraceTask>(creationConfig) {
 
         override val name = computeTaskName("matrix", "Trace")
         override val type = MatrixTraceTask::class.java
 
         override fun execute(task: MatrixTraceTask) {
-
             val project = creationConfig.project
-            val variantDirName = creationConfig.variant.dirName
+            val mappingOut = project.layout.buildDirectory.dir("outputs/mapping/${creationConfig.variant.name}")
 
-            val mappingOut = Joiner.on(File.separatorChar).join(
-                    project.buildDir,
-                    FD_OUTPUTS,
-                    "mapping",
-                    variantDirName)
-
-            val traceClassOut = getTraceClassOut(project, creationConfig)
-
-            // Input properties
-            val baseMethodMapFile = File(extension.baseMethodMapFile)
-            if (baseMethodMapFile.exists()) {
-                task.baseMethodMapFile.set(baseMethodMapFile)
+            extension.baseMethodMapFile?.takeIf { it.isNotBlank() }?.let {
+                val file = project.file(it)
+                if (file.exists()) task.baseMethodMapFile.set(file)
             }
-            val blackListFile = File(extension.blackListFile)
-            if (blackListFile.exists()) {
-                task.blockListFile.set(blackListFile)
+            extension.blackListFile?.takeIf { it.isNotBlank() }?.let {
+                val file = project.file(it)
+                if (file.exists()) task.blockListFile.set(file)
             }
-            task.mappingDir.set(mappingOut)
-            task.traceClassOutputDirectory.set(traceClassOut)
+            task.bootClasspath.setFrom(bootClasspath)
+            task.mappingDir.set(mappingOut.map { it.asFile.absolutePath })
             task.skipCheckClass.set(extension.isSkipCheckClass)
-
-            // Output properties
-            task.ignoreMethodMapFileOutput.set(File("$mappingOut/ignoreMethodMapping.txt"))
-            task.methodMapFileOutput.set(File("$mappingOut/methodMapping.txt"))
+            task.ignoreMethodMapFileOutput.set(mappingOut.map { it.file("ignoreMethodMapping.txt") })
+            task.methodMapFileOutput.set(mappingOut.map { it.file("methodMapping.txt") })
         }
     }
-
 }

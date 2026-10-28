@@ -184,7 +184,7 @@ public class BatteryStatsSubProcActivity extends AppCompatActivity {
                 mCurrHeader = currHeader;
                 View headerView = findViewById(R.id.header_pinned);
                 headerView.setVisibility(View.VISIBLE);
-                TextView tv = headerView.findViewById(R.id.tv_title);
+                TextView tv = headerView.findViewById(com.tencent.matrix.batterycanary.R.id.tv_title);
                 tv.setText(currHeader.date);
 
                 List<Pair<Float, Long>> dataSet = mStatsLoader.getCurrPowerDataSet(getApplicationContext(), currHeader.date);

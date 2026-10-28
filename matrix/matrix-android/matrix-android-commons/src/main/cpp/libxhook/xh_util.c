@@ -38,9 +38,17 @@
 #include "xh_log.h"
 #include "xh_maps.h"
 
-#define PAGE_START(addr) ((addr) & PAGE_MASK)
-#define PAGE_END(addr)   (PAGE_START(addr + sizeof(uintptr_t) - 1) + PAGE_SIZE)
-#define PAGE_COVER(addr) (PAGE_END(addr) - PAGE_START(addr))
+static uintptr_t xh_util_page_start(uintptr_t addr)
+{
+    uintptr_t page_size = (uintptr_t)getpagesize();
+    return addr & ~(page_size - 1);
+}
+
+static uintptr_t xh_util_page_end(uintptr_t addr)
+{
+    uintptr_t page_size = (uintptr_t)getpagesize();
+    return xh_util_page_start(addr + sizeof(uintptr_t) - 1) + page_size;
+}
 
 static int xh_util_get_mem_protect_maps_iter_cb(void* data, uintptr_t start, uintptr_t end, char* perms,
                                                 int offset, char* pathname)
@@ -116,7 +124,8 @@ int xh_util_get_addr_protect(uintptr_t addr, const char *pathname, unsigned int 
 
 int xh_util_set_addr_protect(uintptr_t addr, unsigned int prot)
 {
-    if(0 != mprotect((void *)PAGE_START(addr), PAGE_COVER(addr), (int)prot))
+    uintptr_t page_start = xh_util_page_start(addr);
+    if(0 != mprotect((void *)page_start, xh_util_page_end(addr) - page_start, (int)prot))
         return 0 == errno ? XH_ERRNO_UNKNOWN : errno;
     
     return 0;
@@ -124,7 +133,7 @@ int xh_util_set_addr_protect(uintptr_t addr, unsigned int prot)
 
 void xh_util_flush_instruction_cache(uintptr_t addr)
 {
-    __builtin___clear_cache((void *)PAGE_START(addr), (void *)PAGE_END(addr));
+    __builtin___clear_cache((void *)xh_util_page_start(addr), (void *)xh_util_page_end(addr));
 }
 
 #if __ANDROID_API__ >= 23

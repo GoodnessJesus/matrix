@@ -173,7 +173,7 @@ public class SimpleLineChart extends View {
         currentTextX = proportionWidth / 2 + horizontalSpace;
         currentTextY = mSelfHeight - verticalSpace;
         mPaint.setTextSize(DisplayUtils.sp2px(getContext(), 13));
-        mPaint.setColor(getResources().getColor(R.color.FG_2));
+        mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.FG_2));
         mPaint.setTextAlign(Paint.Align.CENTER);
         for (Long timeMilli : mTimeMillis) {
             // currentTextX 左边起始点，currentTextY 文字基线坐标
@@ -191,7 +191,7 @@ public class SimpleLineChart extends View {
         float bottomLineStartY = mSelfHeight - bottomTextH - textWithLineSpace - verticalSpace;
         float bottomLineStopY = bottomLineStartY;
 
-        mPaint.setColor(getResources().getColor(R.color.Red));
+        mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.Red));
         mPaint.setStrokeWidth(lineWidth);
 
         canvas.drawLine(bottomLineStartX, bottomLineStartY, bottomLineStopX, bottomLineStopY, mPaint);
@@ -223,10 +223,10 @@ public class SimpleLineChart extends View {
         // 画点
         for (int i = 0; i < points.size(); i++) {
             if (mode == MODE_ONE) {
-                mPaint.setColor(getResources().getColor(R.color.Red_170));
+                mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.Red_170));
                 canvas.drawCircle(points.get(i).x, points.get(i).y, outsideRadius, mPaint);
             }
-            mPaint.setColor(getResources().getColor(R.color.Red));
+            mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.Red));
             canvas.drawCircle(points.get(i).x, points.get(i).y, insideRadius, mPaint);
         }
 
@@ -241,7 +241,7 @@ public class SimpleLineChart extends View {
         }
         mPaint.setStyle(Paint.Style.STROKE);
         mPaint.setStrokeWidth(lineWidth);
-        mPaint.setColor(getResources().getColor(R.color.Red));
+        mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.Red));
         canvas.drawPath(linePath, mPaint);
     }
 
@@ -286,7 +286,7 @@ public class SimpleLineChart extends View {
     private void drawTopText(Canvas canvas) {
         Rect rect = new Rect();
         mPaint.setStyle(Paint.Style.FILL);
-        mPaint.setColor(getResources().getColor(R.color.FG_0));
+        mPaint.setColor(getResources().getColor(com.tencent.matrix.batterycanary.R.color.FG_0));
         mPaint.setTextAlign(Paint.Align.CENTER);
         for (int i = 0; i < mData.length; i++) {
             float textX = points.get(i).x;

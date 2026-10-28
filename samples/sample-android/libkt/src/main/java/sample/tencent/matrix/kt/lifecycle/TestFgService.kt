@@ -10,7 +10,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Process
 import com.tencent.matrix.util.MatrixLog
-import sample.tencent.matrix.kt.R
+import com.tencent.matrix.R
 import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
 

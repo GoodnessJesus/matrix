@@ -3,28 +3,19 @@ apply plugin: 'kotlin'
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation gradleApi()
+    compileOnly gradleApi()
+    compileOnly 'com.android.tools.build:gradle:9.4.1'
     implementation project(':matrix-commons')
-    implementation group: 'org.ow2.asm', name: 'asm', version: '7.0'
-    implementation group: 'org.ow2.asm', name: 'asm-commons', version: '7.0'
-    implementation 'com.android.tools.build:gradle:4.0.0'
+    implementation 'org.ow2.asm:asm:9.8'
+    implementation 'org.ow2.asm:asm-commons:9.8'
+    implementation 'org.ow2.asm:asm-util:9.8'
     implementation project(':matrix-arscutil')
+    implementation 'com.google.code.gson:gson:2.8.9'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:${gradle.KOTLIN_VERSION}"
 }
-sourceSets {
-    main {
-        java {
-            srcDir "../matrix-gradle-plugin/src/main/java"
-        }
 
-        resources {
-            srcDir '../matrix-gradle-plugin/src/main/resources'
-        }
-    }
-}
-
-version rootProject.ext.VERSION_NAME
-group rootProject.ext.GROUP
+version = rootProject.ext.VERSION_NAME
+group = rootProject.ext.GROUP
 
 if("External" == rootProject.ext.PUBLISH_CHANNEL) {
     apply from: rootProject.file('gradle/java-publish.gradle')

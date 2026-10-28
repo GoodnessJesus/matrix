@@ -16,9 +16,6 @@
 
 package com.tencent.matrix.plugin.trace
 
-import com.android.build.api.transform.Status
-import com.android.utils.FileUtils
-import com.google.common.hash.Hashing
 import com.tencent.matrix.javalib.util.IOUtil
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.javalib.util.Util
@@ -26,8 +23,8 @@ import com.tencent.matrix.trace.*
 import com.tencent.matrix.trace.item.TraceMethod
 import com.tencent.matrix.trace.retrace.MappingCollector
 import com.tencent.matrix.trace.retrace.MappingReader
-import org.gradle.api.Project
 import java.io.File
+import java.security.MessageDigest
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
@@ -37,13 +34,20 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 
+enum class Status {
+    NOTCHANGED,
+    ADDED,
+    CHANGED,
+    REMOVED
+}
+
 class MatrixTrace(
         private val ignoreMethodMapFilePath: String,
         private val methodMapFilePath: String,
         private val baseMethodMapPath: String?,
         private val blockListFilePath: String?,
         private val mappingDir: String,
-        private val project: Project
+        private val bootClasspath: Collection<File>
 ) {
     companion object {
         private const val TAG: String = "Matrix.Trace"
@@ -51,7 +55,9 @@ class MatrixTrace(
         @Suppress("DEPRECATION")
         fun getUniqueJarName(jarFile: File): String {
             val origJarName = jarFile.name
-            val hashing = Hashing.sha1().hashString(jarFile.path, Charsets.UTF_16LE).toString()
+            val hashing = MessageDigest.getInstance("SHA-1")
+                    .digest(jarFile.path.toByteArray(Charsets.UTF_16LE))
+                    .joinToString("") { "%02x".format(it) }
             val dotPos = origJarName.lastIndexOf('.')
             return if (dotPos < 0) {
                 String.format("%s_%s", origJarName, hashing)
@@ -172,7 +178,7 @@ class MatrixTrace(
             it.addAll(dirInputOutMap.keys)
             it.addAll(jarInputOutMap.keys)
         }
-        val traceClassLoader = TraceClassLoader.getClassLoader(project, allInputs)
+        val traceClassLoader = TraceClassLoader.getClassLoader(bootClasspath, allInputs)
         methodTracer.trace(dirInputOutMap, jarInputOutMap, traceClassLoader, skipCheckClass)
 
         Log.i(TAG, "[doTransform] Step(3)[Trace]... cost:%sms", System.currentTimeMillis() - start)
@@ -298,9 +304,9 @@ class MatrixTrace(
 
             if (!dirInput.exists() && dirOutput.exists()) {
                 if (dirOutput.isDirectory) {
-                    FileUtils.deletePath(dirOutput)
+                    dirOutput.deleteRecursively()
                 } else {
-                    FileUtils.delete(dirOutput)
+                    dirOutput.delete()
                 }
             }
 

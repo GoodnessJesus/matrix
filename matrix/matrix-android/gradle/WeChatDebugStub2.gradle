@@ -136,11 +136,11 @@ android {
     sourceSets.main.manifest.srcFile 'AndroidManifest.xml'
 
     // Determine compile SDK version by listing installed SDK.
-    compileSdkVersion Math.max(getLatestInstalledSdk(sdkDirectory), targetSdk)
+    compileSdk Math.max(getLatestInstalledSdk(androidComponents.sdkComponents.sdkDirectory.get().asFile), targetSdk)
 
     defaultConfig {
-        minSdkVersion minSdk
-        targetSdkVersion targetSdk
+        minSdk minSdk
+        targetSdk targetSdk
         ndk { abiFilters = installAbis }
     }
 }
@@ -156,11 +156,11 @@ rootProject.allprojects.forEach { p ->
 }
 
 // Emit reconstruct task.
-afterEvaluate {
-    packageDebug.doLast {
-        def outputApk = file("${buildDir}/outputs/apk/debug/${project.name}-debug.apk")
+tasks.matching { it.name == 'packageDebug' }.configureEach {
+    doLast {
+        def outputApk = outputs.files.asFileTree.matching { include '**/*.apk' }.singleFile
         def tmpFile = new File(outputApk.parentFile, 'reconstruct.apk')
-        def sdkDir = android.sdkDirectory
+        def sdkDir = androidComponents.sdkComponents.sdkDirectory.get().asFile
         def buildToolsVersion = android.buildToolsVersion
 
         try {

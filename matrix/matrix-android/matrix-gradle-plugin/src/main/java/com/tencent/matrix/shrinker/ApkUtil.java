@@ -16,7 +16,7 @@
 
 package com.tencent.matrix.shrinker;
 
-import com.android.builder.model.SigningConfig;
+import com.android.build.api.dsl.ApkSigningConfig;
 import com.tencent.matrix.javalib.util.Pair;
 import com.tencent.matrix.javalib.util.Util;
 
@@ -347,7 +347,7 @@ public class ApkUtil {
         }
     }
 
-    public static void signApk(String apkFilePath, String apksigner, SigningConfig signingConfig) throws GradleException, IOException, InterruptedException {
+    public static void signApk(String apkFilePath, String apksigner, ApkSigningConfig signingConfig) throws GradleException, IOException, InterruptedException {
         ProcessBuilder processBuilder = new ProcessBuilder();
         ArrayList<String> commandList = new ArrayList(Arrays.asList(apksigner, "sign", "-v",
                 "--ks", signingConfig.getStoreFile().getAbsolutePath(),

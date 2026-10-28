@@ -47,7 +47,11 @@ class WeChatPublishExtension {
     WeChatPublishExtension(Project proj) {
         project = proj
         fillDefaultConfiguration()
-        proj.afterEvaluate { this.publish() }
+        if (project.plugins.hasPlugin('com.android.library')) {
+            this.publish()
+        } else {
+            proj.afterEvaluate { this.publish() }
+        }
     }
 
     protected final String uncapitalize(String str) {
@@ -280,7 +284,7 @@ class WeChatJavaLibraryPublishExtension extends WeChatPublishExtension {
     protected void emitPublicationDSL(Project project) {
 
         def sourcesJarTask = project.task('sourcesJar', type: Jar) {
-            classifier = 'sources'
+            archiveClassifier = 'sources'
 
             def srcDirs = []
             def sources = project.sourceSets.main
@@ -308,7 +312,7 @@ class WeChatJavaLibraryPublishExtension extends WeChatPublishExtension {
         }
         def javadocJarTask = project.task('javadocJar', type: Jar) {
             dependsOn javadocTask
-            classifier = 'javadoc'
+            archiveClassifier = 'javadoc'
             from javadocTask.destinationDir
         }
         // TODO: upload javadoc to documentation site
@@ -317,9 +321,9 @@ class WeChatJavaLibraryPublishExtension extends WeChatPublishExtension {
             "${publicationName}" (MavenPublication) {
                 from project.components.java
 
-                groupId this.groupId
-                artifactId this.artifactId
-                version this.fullVersion
+                groupId = this.groupId
+                artifactId = this.artifactId
+                version = this.fullVersion
 
                 // Emit sourcesJar task
                 if (withSources) {
@@ -359,12 +363,12 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
         def android = project.android
         def hasReleaseVariant = false
 
-        android.libraryVariants.all { variant ->
+        project.androidComponents.onVariants(project.androidComponents.selector()) { variant ->
             def variantName = variant.name
             def cVariantName = variantName.capitalize()
 
             def flavorName = variant.flavorName
-            def variantOnlyName = uncapitalize(variantName.substring(flavorName.length(), variantName.length()))
+            def variantOnlyName = variant.buildType
             def hasFlavor = variant.flavorName != null && !variant.flavorName.isEmpty()
 
             if (flavorName == defaultFlavor)
@@ -380,11 +384,11 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                 group = 'documentation'
                 title = null
 
-                def classpathFiles = project.files(android.getBootClasspath().join(File.pathSeparator))
-                classpathFiles += project.files(project.configurations.compile)
+                def classpathFiles = project.files(project.androidComponents.sdkComponents.bootClasspath)
+                classpathFiles += variant.compileClasspath
                 doFirst { classpath += classpathFiles }
 
-                source = variant.javaCompile.source
+                source = variant.sources.java.all
                 options {
                     memberLevel = JavadocMemberLevel.PUBLIC
 
@@ -395,81 +399,84 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                     }
                     //docletpath = project.configurations.doclava.files as List
                 }
-                destinationDir = project.file("${project.buildDir}/docs/javadoc")
+                destinationDir = project.layout.buildDirectory.dir("docs/javadoc/${variantName}").get().asFile
                 exclude '**/BuildConfig.java'
                 exclude '**/R.java'
-                failOnError false
+                failOnError = false
 
-                dependsOn generateSourcesTask
+                if (generateSourcesTask != null) {
+                    dependsOn generateSourcesTask
+                }
             }
 
             def javadocJarTask = project.task("javadocJar${cVariantName}", type: Jar) {
-                classifier = 'javadoc'
+                archiveClassifier = 'javadoc'
+                destinationDirectory = project.layout.buildDirectory.dir("libs/${variantName}")
                 from javadocTask.destinationDir
                 dependsOn javadocTask
             }
 
             def sourcesJarTask = project.task("sourcesJar${cVariantName}", type: Jar) {
-                classifier = 'sources'
+                archiveClassifier = 'sources'
+                destinationDirectory = project.layout.buildDirectory.dir("libs/${variantName}")
 
-                def srcDirs = []
-                variant.sourceSets.each { sources ->
-                    ['java', 'groovy', 'scala', 'kotlin'].each {
-                        if (sources.hasProperty(it))
-                            srcDirs << sources[it].srcDirs
-                    }
+                from variant.sources.java.all
+                from variant.sources.kotlin.all
+                if (generateSourcesTask != null) {
+                    dependsOn generateSourcesTask
                 }
-
-                from srcDirs
-                dependsOn generateSourcesTask
             }
 
-            def externalNativeBuildTask = project.tasks.findByName(
-                    "externalNativeBuild${cVariantName}")
-            Zip nativeSymbolZipTask = null
-            if (externalNativeBuildTask != null) {
-                nativeSymbolZipTask = project.task("nativeSymbolZip${cVariantName}", type: Zip) {
-                    classifier = "${variantOnlyName}Symbols"
-                    from externalNativeBuildTask.objFolder
-                    include '*/*.so'
-                    dependsOn externalNativeBuildTask
+            def nativeBuildTaskPrefixes = [
+                    "buildCMake${cVariantName}",
+                    "buildNdkBuild${cVariantName}"
+            ]
+            if (variantOnlyName == 'release') {
+                nativeBuildTaskPrefixes.add('buildCMakeRelWithDebInfo')
+            }
+            def nativeBuildTasks = project.tasks.matching { task ->
+                task.hasProperty('soFolder') && nativeBuildTaskPrefixes.any {
+                    task.name.startsWith("${it}[")
                 }
-
-                externalNativeBuildTask.doLast {
-                    // If externalNativeBuild generates no shared library files,
-                    // remove symbols artifact from the publication.
-                    if (nativeSymbolZipTask.inputs.sourceFiles.empty) {
-                        def publication = project.publishing.publications
-                                .getByName("${publicationName}${cFlavorName}")
-                        publication.artifacts.removeIf {
-                            it.file == nativeSymbolZipTask.archivePath
+            }
+            Zip nativeSymbolZipTask = null
+            if (variant.externalNativeBuild != null) {
+                nativeSymbolZipTask = project.task("nativeSymbolZip${cVariantName}", type: Zip) {
+                    archiveClassifier = "${variantOnlyName}Symbols"
+                    destinationDirectory = project.layout.buildDirectory.dir("libs/${variantName}")
+                    dependsOn nativeBuildTasks
+                    nativeBuildTasks.all { nativeTask ->
+                        from(nativeTask.soFolder) {
+                            into nativeTask.soFolder.map { it.asFile.name }
+                            include '**/*.so'
+                            include '**/*.a'
                         }
                     }
                 }
             }
 
-            def bundleTask = project.tasks.findByName("bundle${cVariantName}Aar")
-            if (bundleTask == null)
-                bundleTask = project.tasks.findByName("bundle${cVariantName}")
+            def aarArtifactClass = project.android.class.classLoader.loadClass(
+                    'com.android.build.api.artifact.SingleArtifact$AAR')
+            def bundleArtifact = variant.artifacts.get(aarArtifactClass.getField('INSTANCE').get(null))
 
             project.publishing.publications {
                 "${publicationName}${cFlavorName}"(MavenPublication) {
                     if (variantOnlyName == 'release') {
                         hasReleaseVariant = true
 
-                        artifact(source: bundleTask, classifier: null)
+                        artifact(bundleArtifact)
 
                         if (withSources) {
-                            artifact(source: sourcesJarTask, classifier: 'sources')
+                            artifact(sourcesJarTask)
                         }
                         if (withJavadoc) {
-                            artifact(source: javadocJarTask, classifier: 'javadoc')
+                            artifact(javadocJarTask)
                         }
                         if (withNativeSymbols && nativeSymbolZipTask != null) {
                             artifact(source: nativeSymbolZipTask, classifier: 'symbols')
                         }
                     } else if (publishAllVariants || publishVariants.contains(variantOnlyName)) {
-                        artifact(source: bundleTask, classifier: variantOnlyName)
+                        artifact(source: bundleArtifact, classifier: variantOnlyName)
 
                         if (withNativeSymbols && nativeSymbolZipTask != null) {
                             artifact(source: nativeSymbolZipTask, classifier: "${variantOnlyName}Symbols")
@@ -479,11 +486,11 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                     if (!emittedFlavors.contains(flavorName)) {
                         emittedFlavors << flavorName
 
-                        groupId this.groupId
-                        version this.fullVersion
+                        groupId = this.groupId
+                        version = this.fullVersion
 
                         if (hasFlavor) {
-                            def currFlavor = variant.productFlavors.get(0)
+                            def currFlavor = android.productFlavors.getByName(variant.productFlavors.get(0).second)
                             def actualArtifactIdSuffix = ''
                             if (currFlavor.ext.has('artifactIdSuffix')) {
                                 actualArtifactIdSuffix = currFlavor.ext.artifactIdSuffix
@@ -496,14 +503,14 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                             } else {
                                 actualArtifactIdSuffix = flavorName
                             }
-                            artifactId actualArtifactIdSuffix.empty ?
+                            artifactId = actualArtifactIdSuffix.empty ?
                                     this.artifactId : "${this.artifactId}-${actualArtifactIdSuffix}"
                         } else {
-                            artifactId this.artifactId
+                            artifactId = this.artifactId
                         }
 
                         pom {
-                            packaging 'aar'
+                            packaging = 'aar'
 
                             withXml {
                                 // Resolve dependencies
@@ -517,7 +524,7 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                                     def artifactId = dep.name
                                     def version = dep.version
                                     if (dep instanceof ProjectDependency) {
-                                        def p = (dep as ProjectDependency).dependencyProject
+                                        def p = project.project((dep as ProjectDependency).path)
                                         if (p.hasProperty('artifactId'))
                                             artifactId = p.property('artifactId')
                                         if (p.hasProperty('fullVersion'))
@@ -574,12 +581,6 @@ class WeChatAndroidLibraryPublishExtension extends WeChatPublishExtension {
                     }
                 }
             }
-        } // android.libraryVariants.all
-
-        // Check whether "release" variant is published
-        project.afterEvaluate {
-            if (!hasReleaseVariant)
-                throw new GradleException('Publishing Android library require "release" variant')
         }
     }
 }

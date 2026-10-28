@@ -8,19 +8,20 @@ buildscript {
 
     }
 
-    gradle.ext.KOTLIN_VERSION = "1.4.32"
+    gradle.ext.KOTLIN_VERSION = "2.2.10"
 
     dependencies {
-        // classpath
-        classpath 'com.android.tools.build:gradle:4.1.0'
-        classpath 'digital.wup:android-maven-publish:3.6.2'
+        classpath 'com.android.tools.build:gradle:9.4.1'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$gradle.KOTLIN_VERSION"
     }
 
 }
 
 Properties localProperties = new Properties()
-localProperties.load(project.rootProject.file('local.properties').newDataInputStream())
+def localPropertiesFile = project.rootProject.layout.projectDirectory.file('local.properties').asFile
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
 def SigningFromLocalProperties(properties, project, String prop) {
     if (properties.getProperty(prop)) {
         project.ext[prop] = properties.getProperty(prop)
@@ -39,27 +40,35 @@ allprojects {
         options.setEncoding('UTF-8')
     }
 
-    SigningFromLocalProperties(localProperties, project, 'REPOSITORY_USERNAME' as String)
-    SigningFromLocalProperties(localProperties, project, 'REPOSITORY_PASSWORD' as String)
-    SigningFromLocalProperties(localProperties, project, 'signing.keyId' as String)
-    SigningFromLocalProperties(localProperties, project, 'signing.password' as String)
-    SigningFromLocalProperties(localProperties, project, 'signing.secretKeyRingFile' as String)
+    rootProject.SigningFromLocalProperties(localProperties, project, 'REPOSITORY_USERNAME' as String)
+    rootProject.SigningFromLocalProperties(localProperties, project, 'REPOSITORY_PASSWORD' as String)
+    rootProject.SigningFromLocalProperties(localProperties, project, 'signing.keyId' as String)
+    rootProject.SigningFromLocalProperties(localProperties, project, 'signing.password' as String)
+    rootProject.SigningFromLocalProperties(localProperties, project, 'signing.secretKeyRingFile' as String)
 
 }
 
+subprojects {
+    plugins.withId('com.android.library') {
+        extensions.getByName('android').buildToolsVersion = rootProject.ext.buildToolsVersion
+    }
+    plugins.withId('com.android.application') {
+        extensions.getByName('android').buildToolsVersion = rootProject.ext.buildToolsVersion
+    }
+}
 
 ext {
     // For android sub-projects
-    minSdkVersion = 19
-    targetSdkVersion = 29
-    compileSdkVersion = 31
-    buildToolsVersion = '29.0.2'
+    minSdk = 21
+    targetSdk = 29
+    compileSdk = 31
+    buildToolsVersion = '37.0.0'
 
     MIN_SDK_VERSION_FOR_HOOK = 21
 
     VERSION_CODE = 1
 
-    javaVersion = JavaVersion.VERSION_1_8
+    javaVersion = JavaVersion.VERSION_11
 
     GROUP = 'com.tencent.matrix'
     VERSION_NAME = "${VERSION_NAME_PREFIX}${VERSION_NAME_SUFFIX}"
@@ -92,7 +101,7 @@ ext {
 
 // Build sample project
 // TODO: Failed on Linux jenkins node, to be fixed later
-task buildSampleProject() {
+tasks.register('buildSampleProject') {
     group = "build"
     doLast {
         exec {
@@ -101,13 +110,12 @@ task buildSampleProject() {
     }
 }
 
-// Generate version.txt automatic
-task generateVersionTxt() {
+tasks.register('generateVersionTxt') {
+    def versionFile = layout.buildDirectory.file('outputs/version.txt')
     doLast {
-        // Write down to version.txt
-        def file = new File("${buildDir}/outputs/version.txt")
-        file.createNewFile()
-        file.write(rootProject.ext.VERSION_NAME)
+        def file = versionFile.get().asFile
+        file.parentFile.mkdirs()
+        file.text = rootProject.ext.VERSION_NAME
     }
 }
 

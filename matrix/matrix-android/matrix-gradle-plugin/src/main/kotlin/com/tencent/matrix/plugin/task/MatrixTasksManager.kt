@@ -16,14 +16,19 @@
 
 package com.tencent.matrix.plugin.task
 
-import com.android.build.gradle.AppExtension
+import com.android.build.api.artifact.ScopedArtifact
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+import com.android.build.api.variant.ApplicationVariant
+import com.android.build.api.variant.ScopedArtifacts
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.javalib.util.Util
 import com.tencent.matrix.plugin.compat.CreationConfig
-import com.tencent.matrix.plugin.compat.MatrixTraceCompat
 import com.tencent.matrix.plugin.extension.MatrixRemoveUnusedResExtension
 import com.tencent.matrix.trace.extension.MatrixTraceExtension
 import org.gradle.api.Project
+import org.gradle.api.tasks.TaskProvider
 
 class MatrixTasksManager {
 
@@ -31,58 +36,80 @@ class MatrixTasksManager {
         const val TAG = "Matrix.TasksManager"
     }
 
-    fun createMatrixTasks(android: AppExtension,
-                          project: Project,
-                          traceExtension: MatrixTraceExtension,
-                          removeUnusedResourcesExtension: MatrixRemoveUnusedResExtension) {
-
-        createMatrixTraceTask(android, project, traceExtension)
-
-        createRemoveUnusedResourcesTask(android, project, removeUnusedResourcesExtension)
+    fun createMatrixTasks(
+            android: ApplicationExtension,
+            androidComponents: ApplicationAndroidComponentsExtension,
+            project: Project,
+            traceExtension: MatrixTraceExtension,
+            removeUnusedResourcesExtension: MatrixRemoveUnusedResExtension
+    ) {
+        androidComponents.onVariants { variant ->
+            val signingConfig = variant.buildType?.let {
+                android.buildTypes.getByName(it).signingConfig
+            }
+            val creationConfig = CreationConfig(variant, project, signingConfig)
+            if (traceExtension.isEnable) {
+                createMatrixTraceTask(androidComponents, project, creationConfig, traceExtension)
+            }
+            if (removeUnusedResourcesExtension.enable &&
+                    (Util.isNullOrNil(removeUnusedResourcesExtension.variant) ||
+                            variant.name.equals(removeUnusedResourcesExtension.variant, true))) {
+                createRemoveUnusedResourcesTask(project, creationConfig, removeUnusedResourcesExtension)
+            }
+        }
     }
 
     private fun createMatrixTraceTask(
-            android: AppExtension,
+            androidComponents: ApplicationAndroidComponentsExtension,
             project: Project,
-            traceExtension: MatrixTraceExtension) {
-        MatrixTraceCompat().inject(android, project, traceExtension)
+            creationConfig: CreationConfig,
+            extension: MatrixTraceExtension
+    ) {
+        val action = MatrixTraceTask.CreationAction(
+                creationConfig,
+                extension,
+                project.files(androidComponents.sdkComponents.bootClasspath)
+        )
+        val traceTask = project.tasks.register(action.name, action.type, action)
+        creationConfig.variant.artifacts.forScope(ScopedArtifacts.Scope.ALL)
+                .use(traceTask)
+                .toTransform(
+                        ScopedArtifact.CLASSES,
+                        MatrixTraceTask::inputJars,
+                        MatrixTraceTask::inputDirs,
+                        MatrixTraceTask::output
+                )
     }
+
     private fun createRemoveUnusedResourcesTask(
-            android: AppExtension,
             project: Project,
-            removeUnusedResourcesExtension: MatrixRemoveUnusedResExtension) {
-
-        project.afterEvaluate {
-
-            if (!removeUnusedResourcesExtension.enable) {
-                return@afterEvaluate
+            creationConfig: CreationConfig,
+            extension: MatrixRemoveUnusedResExtension
+    ) {
+        Log.i(TAG, "RemoveUnusedResourcesExtension: %s", extension)
+        if (extension.v2) {
+            val action = RemoveUnusedResourcesTaskV2.CreationAction(creationConfig, extension)
+            val task = project.tasks.register(action.name, action.type, action)
+            val transformationRequest = creationConfig.variant.artifacts.use(task)
+                    .wiredWithDirectories(
+                            RemoveUnusedResourcesTaskV2::inputApkDirectory,
+                            RemoveUnusedResourcesTaskV2::outputApkDirectory
+                    )
+                    .toTransformMany(SingleArtifact.APK)
+            task.configure {
+                it.transformationRequest = transformationRequest
             }
-
-            android.applicationVariants.all { variant ->
-                if (Util.isNullOrNil(removeUnusedResourcesExtension.variant) ||
-                        variant.name.equals(removeUnusedResourcesExtension.variant, true)) {
-                    Log.i(TAG, "RemoveUnusedResourcesExtension: %s", removeUnusedResourcesExtension)
-
-                    val removeUnusedResourcesTaskProvider = if (removeUnusedResourcesExtension.v2) {
-                        val action = RemoveUnusedResourcesTaskV2.CreationAction(
-                                CreationConfig(variant, project), removeUnusedResourcesExtension
-                        )
-                        project.tasks.register(action.name, action.type, action)
-                    } else {
-                        val action = RemoveUnusedResourcesTask.CreationAction(
-                                CreationConfig(variant, project), removeUnusedResourcesExtension
-                        )
-                        project.tasks.register(action.name, action.type, action)
-                    }
-
-                    variant.assembleProvider?.configure {
-                        it.dependsOn(removeUnusedResourcesTaskProvider)
-                    }
-
-                    removeUnusedResourcesTaskProvider.configure {
-                        it.dependsOn(variant.packageApplicationProvider)
-                    }
-                }
+        } else {
+            val action = RemoveUnusedResourcesTask.CreationAction(creationConfig, extension)
+            val task = project.tasks.register(action.name, action.type, action)
+            val transformationRequest = creationConfig.variant.artifacts.use(task)
+                    .wiredWithDirectories(
+                            RemoveUnusedResourcesTask::inputApkDirectory,
+                            RemoveUnusedResourcesTask::outputApkDirectory
+                    )
+                    .toTransformMany(SingleArtifact.APK)
+            task.configure {
+                it.transformationRequest = transformationRequest
             }
         }
     }

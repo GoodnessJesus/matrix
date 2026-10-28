@@ -21,6 +21,7 @@
 #include <jni.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <cassert>
 #include <asm/mman.h>
 #include <sys/mman.h>
 #include "EnhanceDlsym.h"

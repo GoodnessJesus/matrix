@@ -5,7 +5,7 @@ ext.removeUnusedResourcesV2Enable = true
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 
-import com.tencent.matrix.plugin.compat.AgpCompat
+import com.android.build.api.artifact.SingleArtifact
 
 apply plugin: 'com.android.application'
 
@@ -15,8 +15,9 @@ configurations.all {
 }
 
 android {
-    compileSdkVersion 29
-    buildToolsVersion "29.0.3"
+    namespace = 'sample.tencent.matrix'
+    compileSdk = 31
+    buildToolsVersion = "37.0.0"
 
     signingConfigs {
         debug {
@@ -28,12 +29,12 @@ android {
     }
 
     defaultConfig {
-        applicationId "sample.tencent.matrix"
-        minSdkVersion 21
-        targetSdkVersion 29
-        versionCode 1
-        versionName "1.0"
-        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        applicationId = "sample.tencent.matrix"
+        minSdk = 21
+        targetSdk = 29
+        versionCode = 1
+        versionName = "1.0"
+        testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
@@ -42,21 +43,25 @@ android {
 
     buildTypes {
         release {
-            debuggable false
-            minifyEnabled true
-            signingConfig signingConfigs.debug
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            debuggable = false
+            minifyEnabled = true
+            signingConfig = signingConfigs.debug
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            debuggable true
+            debuggable = true
         }
     }
 
-    packagingOptions {
-        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
-        pickFirst 'lib/arm64-v8a/libc++_shared.so'
-        pickFirst 'lib/armeabi-v7a/libwechatbacktrace.so'
-        pickFirst 'lib/arm64-v8a/libwechatbacktrace.so'
+    packaging {
+        jniLibs {
+            pickFirsts += [
+                    'lib/armeabi-v7a/libc++_shared.so',
+                    'lib/arm64-v8a/libc++_shared.so',
+                    'lib/armeabi-v7a/libwechatbacktrace.so',
+                    'lib/arm64-v8a/libwechatbacktrace.so'
+            ]
+        }
     }
 
     // Encapsulates your external native build configurations.
@@ -79,51 +84,52 @@ android {
 
     }
 
-    if (!removeUnusedResourcesV2Enable) {
-        applicationVariants.all { variant ->
-            if (variant.name.equalsIgnoreCase("debug")) {
-                packageDebug.doLast {
-                    ProcessBuilder processBuilder = new ProcessBuilder();
-                    println configurations.apkCheckerDependency.getAt(0).getAbsolutePath()
-                    processBuilder.command("java",
-                            "-jar", configurations.apkCheckerDependency.getAt(0).getAbsolutePath(),
-                            "--apk", variant.outputs.first().outputFile.getAbsolutePath(),
-                            "--output", project.getProjectDir().getAbsolutePath() + "/unused_resources",
-                            "--format", "json",
-                            "-unusedResources", "--rTxt", project.getBuildDir().getAbsolutePath() + "/intermediates/${AgpCompat.getIntermediatesSymbolDirName.invoke()}/${variant.name}/R.txt");
-                    Process process = processBuilder.start();
-                    process.waitFor()
-                    println process.inputStream.text
-                    println process.errorStream.text
-                    File outputFile = new File(project.getProjectDir().getAbsolutePath() + "/unused_resources.json");
-                    if (outputFile.exists()) {
-                        Gson gson = new Gson();
-                        JsonArray jsonArray = gson.fromJson(outputFile.text, JsonArray.class);
-                        for (int i = 0; i < jsonArray.size(); i++) {
-                            if (jsonArray.get(i).asJsonObject.get("taskType").asInt == 12) {
-                                JsonArray resList = jsonArray.get(i).asJsonObject.get("unused-resources").asJsonArray;
-                                for (int j = 0; j < resList.size(); j++) {
-                                    project.ext.unusedResourcesSet.add(resList.get(j).asString);
-                                }
-                                println "find unused resources:\n" + unusedResourcesSet
-                                break;
+}
+
+if (!removeUnusedResourcesV2Enable) {
+    androidComponents.onVariants(androidComponents.selector().withBuildType('debug')) { variant ->
+        def rTxt = variant.artifacts.get(SingleArtifact.RUNTIME_SYMBOL_LIST.INSTANCE)
+        tasks.matching { it.name == "package${variant.name.capitalize()}" }.configureEach {
+            doLast {
+                def apk = outputs.files.asFileTree.matching { include '**/*.apk' }.singleFile
+                def checker = file(matrix.removeUnusedResources.apkCheckerPath)
+                def process = new ProcessBuilder('java', '-jar', checker.absolutePath,
+                        '--apk', apk.absolutePath,
+                        '--output', "${projectDir}/unused_resources",
+                        '--format', 'json', '-unusedResources', '--rTxt', rTxt.get().asFile.absolutePath).start()
+                process.waitFor()
+                println process.inputStream.text
+                println process.errorStream.text
+                def outputFile = projectDir.toPath().resolve('unused_resources.json').toFile()
+                if (outputFile.exists()) {
+                    JsonArray jsonArray = new Gson().fromJson(outputFile.text, JsonArray)
+                    jsonArray.each { item ->
+                        if (item.asJsonObject.get('taskType').asInt == 12) {
+                            item.asJsonObject.get('unused-resources').asJsonArray.each {
+                                project.ext.unusedResourcesSet.add(it.asString)
                             }
                         }
-                        outputFile.delete();
                     }
+                    println "find unused resources:\n${unusedResourcesSet}"
+                    outputFile.delete()
                 }
             }
         }
     }
-
 }
 
 configurations {
-    apkCheckerDependency
-    sevenZipDependency
+    apkCheckerDependency {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+    sevenZipDependency {
+        canBeConsumed = false
+        canBeResolved = true
+    }
 }
 
-if (useLocalMaven()) {
+if (rootProject.ext.useLocalMaven()) {
     apply from: project.file('dependencies-src.gradle')
 } else {
     apply from: project.file('dependencies-aar.gradle')
@@ -136,10 +142,10 @@ if (!removeUnusedResourcesV2Enable) {
 apply plugin: 'com.tencent.matrix-plugin'
 matrix {
 
-    logLevel "D"
+    logLevel = "D"
 
     trace {
-        enable = false
+        enable = true
         baseMethodMapFile = "${project.projectDir}/matrixTrace/methodMapping.txt"
         blackListFile = "${project.projectDir}/matrixTrace/blackMethodList.txt"
     }
@@ -152,36 +158,31 @@ matrix {
             unusedResources = project.ext.unusedResourcesSet
         }
 
-        enable true
-        needSign true
-        shrinkArsc true
-        shrinkDuplicates true
-        use7zip = true
+        enable = true
+        needSign = true
+        shrinkArsc = true
+        shrinkDuplicates = true
+        use7zip = false
         zipAlign = true
-        embedResGuard true
+        embedResGuard = true
 
         apkCheckerPath = "${project.configurations.apkCheckerDependency.resolve().find { it.name.startsWith("matrix-apk-canary") }.getAbsolutePath()}"
-        sevenZipPath = "${project.configurations.sevenZipDependency.resolve().getAt(0).getAbsolutePath()}"
-        //Notice: You need to modify the  value of $apksignerPath on different platform. the value below only suitable for Mac Platform,
-        //if on Windows, you may have to  replace apksigner with apksigner.bat.
-        apksignerPath = "${android.getSdkDirectory().getAbsolutePath()}/build-tools/${android.getBuildToolsVersion()}/apksigner"
-        zipAlignPath = "${android.getSdkDirectory().getAbsolutePath()}/build-tools/${android.getBuildToolsVersion()}/zipalign"
+        def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+        def buildToolsDir = "${androidComponents.sdkComponents.sdkDirectory.get().asFile.absolutePath}/build-tools/${android.buildToolsVersion}"
+        apksignerPath = "${buildToolsDir}/apksigner${isWindows ? '.bat' : ''}"
+        zipAlignPath = "${buildToolsDir}/zipalign${isWindows ? '.exe' : ''}"
         ignoreResources = ["R.id.*", "R.bool.*", "R.layout.unused_layout"]
     }
 }
 
-project.tasks.whenTaskAdded {
-    if (it.name?.equals("assembleDebug") || it.name?.equals("assembleRelease")) {
-        it.dependsOn "cleanBuildDirTask".with { taskName ->
-            if (tasks.findByName(taskName)) {
-                return tasks.findByName(taskName)
-            }
-            return task(taskName) {
-                doFirst {
-                    logger.lifecycle "Clean app bulid dir before assemble"
-                    project.file(project.buildDir).deleteDir()
-                }
-            }
-        }
+def cleanBuildDirTask = tasks.register('cleanBuildDirTask') {
+    doFirst {
+        logger.lifecycle 'Clean app build dir before assemble'
+        layout.buildDirectory.get().asFile.deleteDir()
+    }
+}
+tasks.configureEach {
+    if (name == 'assembleDebug' || name == 'assembleRelease') {
+        dependsOn cleanBuildDirTask
     }
 }

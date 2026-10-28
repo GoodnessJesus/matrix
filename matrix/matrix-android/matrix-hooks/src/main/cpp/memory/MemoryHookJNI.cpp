@@ -18,6 +18,7 @@
 // Created by Yves on 2019-08-08.
 //
 #include <jni.h>
+#include <cassert>
 #include <xhook.h>
 #include <xhook_ext.h>
 #include <xh_errno.h>

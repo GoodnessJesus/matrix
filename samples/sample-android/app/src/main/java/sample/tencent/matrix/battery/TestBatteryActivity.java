@@ -324,7 +324,7 @@ public class TestBatteryActivity extends Activity {
                 .setContentText(tryGetAppRunningNotificationText())
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
-                .setSmallIcon(com.tencent.matrix.batterycanary.R.drawable.ic_launcher)
+                .setSmallIcon(com.tencent.matrix.R.drawable.ic_launcher)
                 .setWhen(System.currentTimeMillis())
                 .build();
 

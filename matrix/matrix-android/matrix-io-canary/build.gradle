@@ -3,12 +3,13 @@ apply plugin: 'com.android.library'
 apply from: rootProject.file('gradle/WeChatNativeDepend.gradle')
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace = 'com.tencent.matrix.iocanary'
+    compileSdk rootProject.ext.compileSdk
     buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdk
         versionCode 1
         versionName rootProject.ext.VERSION_NAME
 

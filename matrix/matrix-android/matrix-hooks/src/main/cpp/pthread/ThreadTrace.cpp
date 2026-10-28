@@ -20,6 +20,7 @@
 
 #include <dlfcn.h>
 #include <unordered_map>
+#include <cassert>
 #include <cxxabi.h>
 #include <sstream>
 #include <iostream>

@@ -3,10 +3,11 @@ apply plugin: 'com.android.application'
 apply from: rootProject.file('gradle/WeChatNativeDepend.gradle')
 
 android {
-    compileSdkVersion rootProject.compileSdkVersion
+    namespace = 'com.tencent.wxperf.sample'
+    compileSdk rootProject.compileSdk
     defaultConfig {
-        minSdkVersion rootProject.MIN_SDK_VERSION_FOR_HOOK
-        targetSdkVersion rootProject.targetSdkVersion
+        minSdk rootProject.MIN_SDK_VERSION_FOR_HOOK
+        targetSdk rootProject.targetSdk
         versionCode rootProject.VERSION_CODE
         versionName rootProject.VERSION_NAME
 

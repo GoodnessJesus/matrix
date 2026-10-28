@@ -33,7 +33,7 @@ class MyBatteryStatsAdapter extends BatteryStatsAdapter {
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         if (viewType == VIEW_TYPE_EVENT_SIMPLE_CUSTOM) {
-            return new MyEventSimpleHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.stats_item_event_simple, parent, false));
+            return new MyEventSimpleHolder(LayoutInflater.from(parent.getContext()).inflate(com.tencent.matrix.batterycanary.R.layout.stats_item_event_simple, parent, false));
         }
         return super.onCreateViewHolder(parent, viewType);
     }

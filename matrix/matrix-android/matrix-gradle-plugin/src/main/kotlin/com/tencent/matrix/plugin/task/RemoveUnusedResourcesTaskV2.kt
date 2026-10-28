@@ -16,15 +16,14 @@
 
 package com.tencent.matrix.plugin.task
 
-import com.android.build.gradle.api.BaseVariant
-import com.android.builder.model.SigningConfig
-import com.android.utils.FileUtils
+import com.android.build.api.artifact.ArtifactTransformationRequest
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.dsl.ApkSigningConfig
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.javalib.util.Pair
 import com.tencent.matrix.javalib.util.Util
-import com.tencent.matrix.plugin.compat.AgpCompat
 import com.tencent.matrix.plugin.compat.CreationConfig
 import com.tencent.matrix.plugin.extension.MatrixRemoveUnusedResExtension
 import com.tencent.matrix.resguard.ResguardMapping
@@ -36,7 +35,15 @@ import com.tencent.mm.arscutil.io.ArscWriter
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
-import org.gradle.api.Project
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
 import java.io.FileOutputStream
@@ -61,7 +68,32 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
         const val RES_GUARD_MAPPING_FILE_NAME = "resguard-mapping.txt"
     }
 
-    private lateinit var variant: BaseVariant
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputApkDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputApkDirectory: DirectoryProperty
+
+    @get:Internal
+    lateinit var transformationRequest: ArtifactTransformationRequest<RemoveUnusedResourcesTaskV2>
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val rTxtFile: RegularFileProperty
+
+    @get:InputFile
+    @get:Optional
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val mappingTxtFile: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val backupDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val checkerOutputDirectory: DirectoryProperty
+
+    private var signingConfig: ApkSigningConfig? = null
 
     private var isDeleteDuplicatesEnabled: Boolean = false
     private var isShrinkArscEnabled: Boolean = false
@@ -71,7 +103,6 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
     private var isResGuardEnabled: Boolean = false
 
     private var obfuscatedResourcesDirectoryName: String? = null
-    private var overrideInputApkFiles: List<File> = emptyList()
     private var resguardMappingFile: File? = null
     private var resguardMapping: ResguardMapping? = null
 
@@ -84,10 +115,6 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
 
     private var reportFile: File? = null
 
-    fun overrideInputApkFiles(inputApkFiles: List<String>) {
-        this.overrideInputApkFiles = inputApkFiles.map { File(it) }
-    }
-
     fun withResguardMapping(path: String) {
         resguardMappingFile = File(path)
         resguardMapping = ResguardMapping(resguardMappingFile!!)
@@ -95,20 +122,16 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
 
     @TaskAction
     fun removeResources() {
-        overrideInputApkFiles
-            .ifEmpty {
-                variant.outputs.map { it.outputFile }
-            }
-            .forEach { apk ->
-                val startTime = System.currentTimeMillis()
-                removeResourcesV2(
-                    project = project,
-                    originalApkFile = apk,
-                    signingConfig = AgpCompat.getSigningConfig(variant),
-                    nameOfSymbolDirectory = AgpCompat.getIntermediatesSymbolDirName()
-                )
-                Log.i(TAG, "cost time %f s", (System.currentTimeMillis() - startTime) / 1000.0f)
-            }
+        transformationRequest.submit(this) { builtArtifact ->
+            val inputApk = File(builtArtifact.outputFile)
+            val outputApk = File(outputApkDirectory.get().asFile, inputApk.name)
+            outputApk.parentFile.mkdirs()
+            inputApk.copyTo(outputApk, overwrite = true)
+            val startTime = System.currentTimeMillis()
+            removeResourcesV2(outputApk, signingConfig)
+            Log.i(TAG, "cost time %f s", (System.currentTimeMillis() - startTime) / 1000.0f)
+            outputApk
+        }
     }
 
     class CreationAction(
@@ -121,7 +144,15 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
 
         override fun execute(task: RemoveUnusedResourcesTaskV2) {
 
-            task.variant = creationConfig.variant
+            task.signingConfig = creationConfig.signingConfig
+            task.rTxtFile.set(creationConfig.variant.artifacts.get(SingleArtifact.RUNTIME_SYMBOL_LIST))
+            if (creationConfig.variant.isMinifyEnabled) {
+                task.mappingTxtFile.set(creationConfig.variant.artifacts.get(SingleArtifact.OBFUSCATION_MAPPING_FILE))
+            }
+            task.backupDirectory.set(creationConfig.project.layout.buildDirectory.dir(
+                    "outputs/shrinkResourceBackup/${creationConfig.variant.name}"))
+            task.checkerOutputDirectory.set(creationConfig.project.layout.buildDirectory.dir(
+                    "matrix/apk-checker/${creationConfig.variant.name}"))
 
             with(removeUnusedResources) {
 
@@ -178,6 +209,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
     ): Boolean {
 
         try {
+            var inputZipFile: ZipFile? = null
             var zipOutputStream: ZipOutputStream? = null
             try {
 
@@ -190,11 +222,12 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                     return false
                 }
 
-                val zipInputFile = ZipFile(fromOriginalApkFile)
+                inputZipFile = ZipFile(fromOriginalApkFile)
+                val zipInputFile = inputZipFile!!
                 val arsc = zipInputFile.getEntry(ARSC_FILE_NAME)
 
                 val unzipDir = File(fromOriginalApkFile.parentFile.canonicalPath + File.separator + fromOriginalApkFile.name.substring(0, fromOriginalApkFile.name.lastIndexOf(".")) + "_unzip")
-                FileUtils.deleteRecursivelyIfExists(unzipDir)
+                deleteRecursivelyIfExists(unzipDir)
                 unzipDir.mkdir()
 
                 val srcArscFile = File(unzipDir, ARSC_FILE_NAME)
@@ -313,7 +346,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                 writer.writeResTable(resTable)
                 Log.i(TAG, "shrink resources.arsc size %f KB", (srcArscFile.length() - destArscFile.length()) / 1024.0)
                 srcArscFile.delete()
-                FileUtils.copyFile(destArscFile, srcArscFile)
+                copyFile(destArscFile, srcArscFile)
                 destArscFile.delete()
 
                 if (is7zipEnabled) {
@@ -327,35 +360,45 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                     if (compressedEntry.isNotEmpty()) {
                         Log.d(TAG, "7zip %d DEFLATED files to apk", compressedEntry.size)
                         val deflateDir = File(fromOriginalApkFile.parentFile, fromOriginalApkFile.name.substring(0, fromOriginalApkFile.name.lastIndexOf(".")) + "_deflated")
-                        FileUtils.deleteRecursivelyIfExists(deflateDir)
+                        deleteRecursivelyIfExists(deflateDir)
                         deflateDir.mkdir()
                         for (compress in compressedEntry) {
                             val entry = compress.substring(unzipDir.canonicalPath.length + 1)
                             val deflateFile = File(deflateDir, entry)
                             deflateFile.parentFile.mkdirs()
                             deflateFile.createNewFile()
-                            FileUtils.copyFile(File(compress), deflateFile)
+                            copyFile(File(compress), deflateFile)
                         }
                         ApkUtil.sevenZipFile(pathOfSevenZip, deflateDir.canonicalPath + "${File.separator}*", toShrunkApkFile.canonicalPath, true)
-                        FileUtils.deleteRecursivelyIfExists(deflateDir)
+                        deleteRecursivelyIfExists(deflateDir)
                     }
                 } else {
                     zipOutputStream = ZipOutputStream(FileOutputStream(toShrunkApkFile))
                     zipFile(zipOutputStream, unzipDir, unzipDir.canonicalPath, compressedEntry)
                 }
 
-                FileUtils.deleteRecursivelyIfExists(unzipDir)
+                deleteRecursivelyIfExists(unzipDir)
 
                 Log.i(TAG, "shrink apk size %f KB", (fromOriginalApkFile.length() - toShrunkApkFile.length()) / 1024.0)
                 return true
 
             } finally {
                 zipOutputStream?.close()
+                inputZipFile?.close()
             }
         } catch (e: Exception) {
             Log.printErrStackTrace(TAG, e, "remove unused resources occur error!")
             return false
         }
+    }
+
+    private fun deleteRecursivelyIfExists(file: File) {
+        file.deleteRecursively()
+    }
+
+    private fun copyFile(source: File, destination: File) {
+        destination.parentFile?.mkdirs()
+        source.copyTo(destination, overwrite = true)
     }
 
     private fun zipFile(zipOutputStream: ZipOutputStream, file: File, rootDir: String, compressedEntry: Set<String>) {
@@ -374,7 +417,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
     }
 
     class FindOutUnusedResources(
-            private val project: Project,
+            private val buildDir: File,
             private val pathOfApkChecker: String,
             private val configOfIgnoredResources: Set<String>,
             private val findOutDuplicates: Boolean
@@ -388,7 +431,8 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                 resultOfDuplicates: MutableMap<String, MutableSet<String>>
         ) {
 
-            val pathOfBuildDir = project.buildDir.canonicalPath
+            buildDir.mkdirs()
+            val pathOfBuildDir = buildDir.canonicalPath
 
             val pathOfOutputWithoutSuffix = File(pathOfBuildDir, "apk_checker").absolutePath
 
@@ -492,7 +536,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                 throw GradleException("Need signing apk but the path of apksigner is not specified!")
             } else if (!File(pathOfApkSigner).exists()) {
                 throw GradleException("Need signing apk but $pathOfApkSigner is not exist!")
-            } else if (AgpCompat.getSigningConfig(variant) == null) {
+            } else if (signingConfig == null) {
                 throw GradleException("Need signing apk but signingConfig is not specified!")
             }
         }
@@ -663,15 +707,11 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
     }
 
     private fun removeResourcesV2(
-            project: Project,
             originalApkFile: File,
-            signingConfig: SigningConfig?,
-            nameOfSymbolDirectory: String
+            signingConfig: ApkSigningConfig?
     ) {
 
-        // Prepare backup dir for un-shrunk apk
-        val fileOfBackup = File(project.buildDir, "outputs")
-                .resolve(BACKUP_DIR_NAME)
+        val fileOfBackup = backupDirectory.get().asFile
                 .resolve(originalApkFile.name.substring(0, originalApkFile.name.indexOf(".")))
 
         fileOfBackup.mkdirs()
@@ -681,28 +721,21 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
 
         var startTime = System.currentTimeMillis()
 
-        val rTxtFile = File(project.buildDir, "intermediates")
-            .resolve(nameOfSymbolDirectory)
-            .resolve(variant.name)
-            .resolve("R.txt")
-
-        val mappingTxtFile = File(project.buildDir, "outputs")
-                .resolve("mapping")
-                .resolve(variant.name)
-                .resolve("mapping.txt")
+        val rTxt = rTxtFile.get().asFile
+        val mappingTxt = mappingTxtFile.asFile.orNull
 
         // Find out unused resources
         var setOfUnusedResources: MutableSet<String> = HashSet()
         val mapOfDuplicatedResources: MutableMap<String, MutableSet<String>> = HashMap()
         FindOutUnusedResources(
-                project = project,
+                buildDir = checkerOutputDirectory.get().asFile,
                 pathOfApkChecker = pathOfApkChecker,
                 configOfIgnoredResources = rulesOfIgnore,
                 findOutDuplicates = isDeleteDuplicatesEnabled
         ).exec(
                 pathOfOriginalApk = originalApkPath,
-                pathOfMapping = mappingTxtFile.absolutePath,
-                pathOfRTxt = rTxtFile.absolutePath,
+                pathOfMapping = mappingTxt?.absolutePath.orEmpty(),
+                pathOfRTxt = rTxt.absolutePath,
                 resguardMappingFile = resguardMappingFile,
 
                 // result
@@ -723,7 +756,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
         val mapOfStyleables: MutableMap<String, Array<Pair<String, Int>>> = HashMap()
 
         // Parse R.txt
-        ApkUtil.readResourceTxtFile(rTxtFile, mapOfResources, mapOfStyleables)
+        ApkUtil.readResourceTxtFile(rTxt, mapOfResources, mapOfStyleables)
 
         // Compute resource to be removed, replaced and obfuscated
         val mapOfResourcesGonnaRemoved: MutableMap<String, Int> = HashMap()
@@ -775,7 +808,7 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                 Log.d(TAG, "Zipalign apk...")
                 ApkUtil.zipAlignApk(shrunkApkPath, alignedApk, pathOfZipAlign)
                 shrunkApkFile.delete()
-                FileUtils.copyFile(File(alignedApk), shrunkApkFile)
+                copyFile(File(alignedApk), shrunkApkFile)
                 File(alignedApk).delete()
             }
 
@@ -803,9 +836,9 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
             }
 
             // Backup original apk and swap shrunk apk
-            FileUtils.copyFile(originalApkFile, File(fileOfBackup, "backup.apk"))
+            copyFile(originalApkFile, File(fileOfBackup, "backup.apk"))
             originalApkFile.delete()
-            FileUtils.copyFile(shrunkApkFile, originalApkFile)
+            copyFile(shrunkApkFile, originalApkFile)
             shrunkApkFile.delete()
 
             // Save shrunk R.txt

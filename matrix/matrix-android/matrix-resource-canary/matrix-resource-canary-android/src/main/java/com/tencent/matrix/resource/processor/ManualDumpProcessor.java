@@ -117,7 +117,7 @@ public class ManualDumpProcessor extends BaseLeakProcessor {
                 .setStyle(new Notification.BigTextStyle().bigText(dumpingHeapContent))
                 .setAutoCancel(true)
                 .setContentIntent(pIntent)
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(com.tencent.matrix.R.drawable.ic_launcher)
                 .setWhen(System.currentTimeMillis());
 
         Notification notification = builder.build();

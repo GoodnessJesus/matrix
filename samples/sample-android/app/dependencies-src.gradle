@@ -23,23 +23,24 @@ dependencies {
         if (rootProject.subprojects.any { (it.name == moduleName) }) {
             implementation project(":${moduleName}")
         } else {
-            implementation group: "com.tencent.matrix", name: moduleName, version: MATRIX_VERSION, changing: true
+            implementation("com.tencent.matrix:${moduleName}:${rootProject.ext.MATRIX_VERSION}") {
+                changing = true
+            }
         }
     }
 
-    // releaseImplementation group: "com.tencent.matrix", name: "matrix-sqlite-lint-android-sdk-no-op", version: MATRIX_VERSION, changing: true
+    // releaseImplementation group: "com.tencent.matrix", name: "matrix-sqlite-lint-android-sdk-no-op", version: rootProject.ext.MATRIX_VERSION, changing: true
     implementation "androidx.appcompat:appcompat:1.1.0"
     implementation 'androidx.recyclerview:recyclerview:1.1.0'
-
-    // TODO
-    apkCheckerDependency group: "com.tencent.matrix", name: "matrix-apk-canary", version: MATRIX_VERSION, changing: true
+    implementation project(':libkt')
+    implementation 'com.tencent:mmkv:1.2.11'
 
     testImplementation 'junit:junit:4.12'
-    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
 
-    apkCheckerDependency("com.tencent.matrix:matrix-apk-canary:${MATRIX_VERSION}")
+    apkCheckerDependency("com.tencent.matrix:matrix-apk-canary:${rootProject.ext.MATRIX_VERSION}")
     sevenZipDependency('com.tencent.mm:SevenZip:1.2.17') {
         artifact {
             name = "SevenZip"

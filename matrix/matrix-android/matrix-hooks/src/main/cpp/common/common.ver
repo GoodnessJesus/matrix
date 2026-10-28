@@ -1,5 +1,6 @@
 {
     global:
+        JNI_OnLoad;
         set_fake_backtrace_vectors*;
         xh_*;
         semi_*;

@@ -16,7 +16,8 @@
 
 package com.tencent.matrix.plugin
 
-import com.android.build.gradle.AppExtension
+import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.variant.ApplicationAndroidComponentsExtension
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.plugin.extension.MatrixExtension
 import com.tencent.matrix.plugin.extension.MatrixRemoveUnusedResExtension
@@ -47,7 +48,8 @@ class MatrixPlugin : Plugin<Project> {
         }
 
         MatrixTasksManager().createMatrixTasks(
-                project.extensions.getByName("android") as AppExtension,
+                project.extensions.getByType(ApplicationExtension::class.java),
+                project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java),
                 project,
                 traceExtension,
                 removeUnusedResourcesExtension

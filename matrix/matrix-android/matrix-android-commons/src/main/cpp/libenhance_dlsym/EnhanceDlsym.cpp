@@ -19,6 +19,7 @@
 //
 
 #include <cstdio>
+#include <cassert>
 #include <elf.h>
 #include <inttypes.h>
 #include <android/log.h>

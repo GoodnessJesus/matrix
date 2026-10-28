@@ -41,22 +41,22 @@ def getRepositoryPassword() {
 
 def pomConfig = {
     scm {
-        url POM_SCM_URL
-        tag POM_SCM_COMMIT
+        url rootProject.ext.POM_SCM_URL
+        tag rootProject.ext.POM_SCM_COMMIT
     }
 
     licenses {
         license {
-            name POM_LICENCE_NAME
-            url POM_LICENCE_URL
-            distribution POM_LICENCE_DIST
+            name rootProject.ext.POM_LICENCE_NAME
+            url rootProject.ext.POM_LICENCE_URL
+            distribution rootProject.ext.POM_LICENCE_DIST
         }
     }
 
     developers {
         developer {
-            id POM_DEVELOPER_ID
-            name POM_DEVELOPER_NAME
+            id rootProject.ext.POM_DEVELOPER_ID
+            name rootProject.ext.POM_DEVELOPER_NAME
         }
     }
 }
@@ -65,11 +65,11 @@ def pomConfig = {
  * TODO: support multiple configurations
  */
 def javadocJar = task("javadocJar", type: Jar, dependsOn: javadoc) {
-    classifier = 'javadoc'
+    archiveClassifier = 'javadoc'
     from javadoc.destinationDir
 }
 def sourcesJar = task("sourcesJar", type: Jar) {
-    classifier = 'sources'
+    archiveClassifier = 'sources'
     from sourceSets.main.java.srcDirs
 }
 
@@ -97,10 +97,10 @@ publishing {
  */
 publishing.repositories {
     maven {
-        url "${isReleaseBuild() ? getReleaseRepositoryUrl() : getSnapshotRepositoryUrl()}"
+        url = "${isReleaseBuild() ? getReleaseRepositoryUrl() : getSnapshotRepositoryUrl()}"
         credentials {
-            username "${getRepositoryUsername()}"
-            password "${getRepositoryPassword()}"
+            username = "${getRepositoryUsername()}"
+            password = "${getRepositoryPassword()}"
         }
     }
 }
@@ -118,7 +118,7 @@ task buildAndPublishToLocalMaven(type: Copy, dependsOn: ['build', 'publishToMave
 
     // save artifacts files to artifacts folder
     from configurations.archives.allArtifacts.files
-    into "${rootProject.buildDir}/outputs/artifacts/"
+    into rootProject.layout.buildDirectory.dir("outputs/artifacts/")
     rename { String fileName ->
         fileName.replace("release.aar", "${version}.aar")
     }
@@ -133,7 +133,7 @@ task buildAndPublishRepo(type: Copy, dependsOn: ['build', 'publish']) {
 
     // save artifacts files to artifacts folder
     from configurations.archives.allArtifacts.files
-    into "${rootProject.buildDir}/outputs/artifacts/"
+    into rootProject.layout.buildDirectory.dir("outputs/artifacts/")
     rename { String fileName ->
         fileName.replace("release.aar", "${version}.aar")
     }
@@ -148,7 +148,7 @@ task publishRepo(type: Copy, dependsOn: ['publish']) {
 
     // save artifacts files to artifacts folder
     from configurations.archives.allArtifacts.files
-    into "${rootProject.buildDir}/outputs/artifacts/"
+    into rootProject.layout.buildDirectory.dir("outputs/artifacts/")
     rename { String fileName ->
         fileName.replace("release.aar", "${version}.aar")
     }

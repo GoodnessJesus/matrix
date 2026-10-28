@@ -16,12 +16,12 @@
 
 package com.tencent.matrix.plugin.task
 
-import com.android.build.gradle.api.BaseVariant
-import com.android.builder.model.SigningConfig
+import com.android.build.api.artifact.ArtifactTransformationRequest
+import com.android.build.api.artifact.SingleArtifact
+import com.android.build.api.dsl.ApkSigningConfig
 import com.tencent.matrix.javalib.util.Log
 import com.tencent.matrix.javalib.util.Pair
 import com.tencent.matrix.javalib.util.Util
-import com.tencent.matrix.plugin.compat.AgpCompat
 import com.tencent.matrix.plugin.compat.CreationConfig
 import com.tencent.matrix.plugin.extension.MatrixRemoveUnusedResExtension
 import com.tencent.matrix.shrinker.RemoveUnusedResourceHelper
@@ -31,6 +31,14 @@ import com.tencent.mm.arscutil.io.ArscWriter
 import org.gradle.api.Action
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
 import java.util.zip.ZipFile
@@ -42,7 +50,21 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
         const val TAG = "Matrix.RemoveUnusedResourcesTask"
     }
 
-    private lateinit var variant: BaseVariant
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputApkDirectory: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputApkDirectory: DirectoryProperty
+
+    @get:Internal
+    lateinit var transformationRequest: ArtifactTransformationRequest<RemoveUnusedResourcesTask>
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val rTxtFile: RegularFileProperty
+
+    private var signingConfig: ApkSigningConfig? = null
 
     private var needSign: Boolean = false
 
@@ -58,17 +80,15 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
 
     @TaskAction
     fun removeResources() {
-
-        val symbolDirName = AgpCompat.getIntermediatesSymbolDirName()
-        val signingConfig = AgpCompat.getSigningConfig(variant)
-
-        val rTxtPath = "${project.buildDir.absolutePath}/intermediates/${symbolDirName}/${variant.name}/R.txt"
-
-        variant.outputs.forEach { output ->
-            val unsignedApkPath = output.outputFile.absolutePath
+        transformationRequest.submit(this) { builtArtifact ->
+            val inputApk = File(builtArtifact.outputFile)
+            val outputApk = File(outputApkDirectory.get().asFile, inputApk.name)
+            outputApk.parentFile.mkdirs()
+            inputApk.copyTo(outputApk, overwrite = true)
             val startTime = System.currentTimeMillis()
-            removeUnusedResources(unsignedApkPath, rTxtPath, signingConfig)
+            removeUnusedResources(outputApk.absolutePath, rTxtFile.get().asFile.absolutePath, signingConfig)
             Log.i(TAG, "cost time %f s", (System.currentTimeMillis() - startTime) / 1000.0f)
+            outputApk
         }
     }
 
@@ -88,7 +108,8 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
             task.ignoreRes = removeUnusedResources.ignoreResources
             task.unusedResources = removeUnusedResources.unusedResources
 
-            task.variant = creationConfig.variant
+            task.signingConfig = creationConfig.signingConfig
+            task.rTxtFile.set(creationConfig.variant.artifacts.get(SingleArtifact.RUNTIME_SYMBOL_LIST))
         }
     }
 
@@ -120,7 +141,7 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
     private fun removeUnusedResources(
             originalApk: String,
             rTxtFile: String,
-            signingConfig: SigningConfig?) {
+            signingConfig: ApkSigningConfig?) {
 
         // Check configurations
         if (needSign) {
@@ -133,6 +154,7 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
             }
         }
 
+        var inputZipFile: ZipFile? = null
         var zipOutputStream: ZipOutputStream? = null
 
         try {
@@ -161,7 +183,8 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
                     outputFile.createNewFile()
                 }
 
-                val zipInputFile = ZipFile(inputFile)
+                inputZipFile = ZipFile(inputFile)
+                val zipInputFile = inputZipFile!!
 
                 zipOutputStream = ZipOutputStream(outputFile.outputStream())
 
@@ -272,6 +295,7 @@ abstract class RemoveUnusedResourcesTask : DefaultTask() {
 
             } finally {
                 zipOutputStream?.close()
+                inputZipFile?.close()
             }
         } catch (e: Exception) {
             Log.printErrStackTrace(TAG, e, "remove unused resources occur error!")

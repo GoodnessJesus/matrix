@@ -3,10 +3,11 @@ apply plugin: 'com.android.application'
 apply from: rootProject.file('gradle/WeChatNativeDepend.gradle')
 
 android {
-    compileSdkVersion rootProject.compileSdkVersion
+    namespace = 'com.example.test_openglleak'
+    compileSdk rootProject.compileSdk
     defaultConfig {
-        minSdkVersion rootProject.MIN_SDK_VERSION_FOR_HOOK
-        targetSdkVersion rootProject.targetSdkVersion
+        minSdk rootProject.MIN_SDK_VERSION_FOR_HOOK
+        targetSdk rootProject.targetSdk
         versionCode rootProject.VERSION_CODE
         versionName rootProject.VERSION_NAME
 
@@ -56,11 +57,15 @@ android {
         }
     }
 
-    packagingOptions {
-        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
-        pickFirst 'lib/arm64-v8a/libc++_shared.so'
-        pickFirst 'lib/armeabi-v7a/libwechatbacktrace.so'
-        pickFirst 'lib/arm64-v8a/libwechatbacktrace.so'
+    packaging {
+        jniLibs {
+            pickFirsts += [
+                    'lib/armeabi-v7a/libc++_shared.so',
+                    'lib/arm64-v8a/libc++_shared.so',
+                    'lib/armeabi-v7a/libwechatbacktrace.so',
+                    'lib/arm64-v8a/libwechatbacktrace.so'
+            ]
+        }
     }
 }
 

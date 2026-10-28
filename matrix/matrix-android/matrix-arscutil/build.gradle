@@ -1,7 +1,7 @@
 apply plugin: 'java'
 
-version rootProject.ext.VERSION_NAME
-group rootProject.ext.GROUP
+version = rootProject.ext.VERSION_NAME
+group = rootProject.ext.GROUP
 
 [compileJava, compileTestJava, javadoc]*.options*.encoding = 'UTF-8'
 

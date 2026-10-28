@@ -3,12 +3,13 @@ apply plugin: 'com.android.library'
 apply from: rootProject.file('gradle/WeChatNativeDepend.gradle')
 
 android {
-    compileSdkVersion rootProject.ext.compileSdkVersion
+    namespace = 'com.tencent.sqlitelint'
+    compileSdk rootProject.ext.compileSdk
     buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdk
         versionCode 1
         versionName rootProject.ext.VERSION_NAME
 
@@ -56,8 +57,8 @@ android {
         }
     }
 
-    lintOptions {
-        abortOnError false
+    lint {
+        abortOnError = false
     }
 }
 
@@ -84,11 +85,8 @@ else {
     }
 }
 
-// TODO: disable externalNativeBuild for stub flavor
-afterEvaluate {
-    tasks.all { task ->
-        if (task.name.startsWith('externalNativeBuildStub')) {
-            enabled false
-        }
+tasks.configureEach {
+    if (name.startsWith('externalNativeBuildStub')) {
+        enabled = false
     }
 }
