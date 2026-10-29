@@ -245,11 +245,17 @@ At this point, Matrix has been integrated into the app and is beginning to colle
   matrix {
     trace {
         enable = true	//if you don't want to use trace canary, set false
-        baseMethodMapFile = "${project.buildDir}/matrix_output/Debug.methodmap"
+        baseMethodMapFile = "${project.projectDir}/matrixTrace/methodMapping.txt"
         blackListFile = "${project.projectDir}/matrixTrace/blackMethodList.txt"
     }
   }
 ```
+
+> Each build writes the method mapping to `app/build/outputs/mapping/<variant>/methodMapping.txt`.
+> Copy it to the path configured as `baseMethodMapFile` (for example
+> `app/matrixTrace/methodMapping.txt`) after a build, so the next build reuses the existing
+> method ids and keeps them stable across builds. The file is optional: if it does not exist,
+> method ids are assigned from scratch.
 
 4. Implement `PluginListener` to receive data processed by Matrix.
 
@@ -271,7 +277,7 @@ At this point, Matrix has been integrated into the app and is beginning to colle
 }
 ```
 
-Matrix gradle plugin could work with Android Gradle Plugin 3.5.0/4.0.0/4.1.0 currently.
+Matrix gradle plugin currently works with Android Gradle Plugin 9.4.1.
 
 5. Implement `DynamicConfig` to change parameters of Matrix.
 ``` java
@@ -656,13 +662,18 @@ Matrix-android 当前监控范围包括：应用安装包大小，帧率变化�
   matrix {
     trace {
         enable = true	//if you don't want to use trace canary, set false
-        baseMethodMapFile = "${project.buildDir}/matrix_output/Debug.methodmap"
+        baseMethodMapFile = "${project.projectDir}/matrixTrace/methodMapping.txt"
         blackListFile = "${project.projectDir}/matrixTrace/blackMethodList.txt"
     }
   }
 ```
 
-目前 Matrix gradle plugin 支持 Android Gradle Plugin 3.5.0/4.0.0/4.1.0。
+> 每次构建会把方法映射表输出到 `app/build/outputs/mapping/<variant>/methodMapping.txt`。
+> 构建后把它复制到 `baseMethodMapFile` 配置的路径（如 `app/matrixTrace/methodMapping.txt`），
+> 下次构建即可复用已有的方法 id，保证多次构建之间 id 稳定。该文件是可选的：不存在时
+> 每次构建都会重新分配方法 id。
+
+目前 Matrix gradle plugin 支持 Android Gradle Plugin 9.4.1。
 
 4. 实现 PluginListener，接收 Matrix 处理后的数据, 如：
 ``` java

@@ -408,7 +408,11 @@ abstract class RemoveUnusedResourcesTaskV2 : DefaultTask() {
                 zipFile(zipOutputStream, subFile, rootDir, compressedEntry)
             }
         } else {
-            val zipEntry = ZipEntry(file.canonicalPath.substring(rootDir.length + 1))
+            // Zip entry names must always use '/' as the separator, otherwise APKs repacked on
+            // Windows contain entries like "lib\arm64-v8a\libfoo.so" that Android can't load.
+            val entryName = file.canonicalPath.substring(rootDir.length + 1)
+                    .replace(File.separatorChar, '/')
+            val zipEntry = ZipEntry(entryName)
             val method = if (compressedEntry.contains(file.canonicalPath)) ZipEntry.DEFLATED else ZipEntry.STORED
             Log.d(TAG, "zip file %s -> entry %s, DEFLATED %s", file.canonicalPath, zipEntry.name, method == ZipEntry.DEFLATED)
             zipEntry.method = method

@@ -1,5 +1,21 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 apply plugin: 'java'
 apply plugin: 'kotlin'
+
+// AGP 9 requires JVM 17, so this module (which compiles against AGP) must target 17 as well.
+// Keeping both targets explicit also prevents compileJava from inheriting the daemon JDK
+// version while compileKotlin caps at the highest target Kotlin supports.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
+    }
+}
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')

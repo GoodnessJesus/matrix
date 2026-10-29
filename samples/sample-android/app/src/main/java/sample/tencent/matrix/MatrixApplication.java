@@ -119,8 +119,8 @@ public class MatrixApplication extends Application {
         builder.plugin(memoryCanaryPlugin);
 
         // Configure trace canary.
-//        TracePlugin tracePlugin = configureTracePlugin(dynamicConfig);
-//        builder.plugin(tracePlugin);
+        TracePlugin tracePlugin = configureTracePlugin(dynamicConfig);
+        builder.plugin(tracePlugin);
 
         // Configure resource canary.
         ResourcePlugin resourcePlugin = configureResourcePlugin(dynamicConfig);
@@ -141,10 +141,7 @@ public class MatrixApplication extends Application {
         builder.matrixLifecycleConfig(configureMatrixLifecycle());
         Matrix.init(builder.build());
 
-        // Trace Plugin need call start() at the beginning.
-//        tracePlugin.start();
-//        memoryCanaryPlugin.start();
-
+        // All plugins are started by startAllPlugins(), including TracePlugin.
         Matrix.with().startAllPlugins();
         MatrixLifecycleLogger.INSTANCE.start();
         TrimMemoryNotifier.INSTANCE.addProcessBackgroundTrimCallback(new TrimCallback() {
