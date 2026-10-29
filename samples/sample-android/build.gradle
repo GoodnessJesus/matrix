@@ -1,9 +1,9 @@
 
 buildscript {
     ext {
-        minSdk = 21
+        minSdk = 23
         targetSdk = 29
-        compileSdk = 31
+        compileSdk = 36
         buildToolsVersion = '37.0.0'
         javaVersion = JavaVersion.VERSION_11
 
@@ -40,8 +40,8 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:9.4.1'
-        classpath 'com.google.code.gson:gson:2.7'
-        classpath 'com.google.gradle:osdetector-gradle-plugin:1.6.0'
+        classpath 'com.google.code.gson:gson:2.11.0'
+        classpath 'com.google.gradle:osdetector-gradle-plugin:1.7.0'
         classpath("com.tencent.matrix:matrix-gradle-plugin:${MATRIX_VERSION}") {
             changing = true
         }

@@ -16,7 +16,7 @@ configurations.all {
 
 android {
     namespace = 'sample.tencent.matrix'
-    compileSdk = 31
+    compileSdk = 36
     buildToolsVersion = "37.0.0"
 
     signingConfigs {
@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         applicationId = "sample.tencent.matrix"
-        minSdk = 21
+        minSdk = 23
         targetSdk = 29
         versionCode = 1
         versionName = "1.0"

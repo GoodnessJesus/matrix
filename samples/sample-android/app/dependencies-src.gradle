@@ -30,12 +30,12 @@ dependencies {
     }
 
     // releaseImplementation group: "com.tencent.matrix", name: "matrix-sqlite-lint-android-sdk-no-op", version: rootProject.ext.MATRIX_VERSION, changing: true
-    implementation "androidx.appcompat:appcompat:1.1.0"
-    implementation 'androidx.recyclerview:recyclerview:1.1.0'
+    implementation "androidx.appcompat:appcompat:1.8.0"
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation project(':libkt')
-    implementation 'com.tencent:mmkv:1.2.11'
+    implementation 'com.tencent:mmkv:2.4.2'
 
-    testImplementation 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.13.2'
     androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })

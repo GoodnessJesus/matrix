@@ -4,11 +4,11 @@ plugins {
 
 android {
     namespace = 'sample.tencent.matrix.kt'
-    compileSdk = 31
+    compileSdk = 36
     buildToolsVersion = rootProject.buildToolsVersion
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
         targetSdk = 29
         versionCode = 1
         versionName = "1.0"
